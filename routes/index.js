@@ -1,5 +1,6 @@
 const express = require('express');
 const { controller } = require('../controllers/formFillerCtrl');
+const { testEndpoint } = require('../controllers/testEndpointCtrl');
 const router = express.Router();
 
 router.get('/', function(req, res, next) {
@@ -7,13 +8,14 @@ router.get('/', function(req, res, next) {
 });
 
 /**
- * Recieve POST request with the following params:
- * req.body
- * - id: {integer/string}
- * - created_date: DATE OF CREATE ID. Format: 'DD/MM/YYYY' {String}
- * - anwser1: 'yes/no' {String}
- * - anwser2: 'yes/no' {String}
+ * Main endpoint
  */
 router.post('/', controller);
+
+/**
+ * Test endpoint 
+ */
+router.post('/api/', testEndpoint)
+
 
 module.exports = router;
