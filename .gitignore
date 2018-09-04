@@ -1,3 +1,6 @@
 node_modules
 launch.json
 configs/local.config.js
+files/*
+!files/.gitkeep
+!files/test/.gitkeep

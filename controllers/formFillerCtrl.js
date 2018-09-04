@@ -35,13 +35,14 @@ const controller = async (req, res) => {
     const scrapper = new Scrapper()
     try {
         const fileResult = await scrapper.getFile(params);
-        
+
         if (fileResult.error) {
             return res.status(400).json({ message: fileResult.message, id: fileResult.id });
         }
 
         // send file to another API
-        const sendResult = await sendFile(res, fileResult.path, params.id)
+        const listDir = await getFiles(fileResult.path)
+        const sendResult = await sendFile(listDir, fileResult.path, fileResult.id);
         return res.json(sendResult)
     } catch (err) {
         // handle all errors
@@ -53,71 +54,71 @@ const controller = async (req, res) => {
     }
 };
 
-
-/**
- * 
- * @param {*} res - Response object
- * @param {String} folderPath - Path to file
- * @param {String} id - ID number
- */
-const sendFile = (res, folderPath, id) => {
-    console.log('send file..', folderPath);
-    return new Promise((resolve, reject) => {
-        fs.readdir(`./files/${folderPath}`, async (err, files) => {
-            if (err) {
-                console.log('err1');
-                reject(err)
-                // return res.status(500).json({ error: true, message: `READ DIR ERROR: ${err.message}` });
+const sendFile = (files, folderPath, id) => {
+    return new Promise(async (resolve, reject) => {
+        const file = files[0];
+        try {
+            if (file.indexOf('.crdownload') > -1) {
+                await waitForDownloadFile(`./files/${folderPath}/${file}`)
             }
-            console.log('here2', files);
-            files.forEach(async file => {
-                // const filePath = `${file}`;
-                console.log('file is', file);
-                try {
-                    if (file.indexOf('.crdownload') > -1) {
-                        await waitForDownloadFile(`./files/${folderPath}/${file}`)
-                    }
-                    const fileStream = fs.readFileSync(`./files/${folderPath}/${file.replace('.crdownload', '')}`);
-                    const base64file = new Buffer(fileStream).toString('base64');
-                    const options = {
-                        method: 'POST',
-                        uri: config.target_url,
-                        body: {
-                            id_number: id,
-                            file_data: base64file,
-                            file_name: file.replace('.crdownload', '')
-                        },
-                        headers: {
-                            'content-type': 'application/json'
-                        },
-                        json: true
-                    }
-                    // await cb();
-                    const result = await rp(options);
-                    resolve(result)
-                    // return res.json(result)
-                } catch (err) {
-                    // await cb();
-                    reject(err)
-                    // return res.status(500).json({ error: true, message: err.message })
-                }
-            })
-        });
-    })
-    // fs.createReadStream(file);
-}
-const waitForDownloadFile = (filePath) => {
-    console.log('waiting for file');
-    return new Promise((resolve, reject) => {
-        if (fs.existsSync(filePath)) {
-            setTimeout(() => {
-                return resolve(waitForDownloadFile(filePath))
-            }, 2000)
-        } else {
-            resolve()
+            const fileStream = fs.readFileSync(`./files/${folderPath}/${file.replace('.crdownload', '')}`);
+            const base64file = new Buffer(fileStream).toString('base64');
+            const options = {
+                method: 'POST',
+                uri: config.target_url,
+                body: {
+                    id_number: id,
+                    file_data: base64file,
+                    file_name: file.replace('.crdownload', '')
+                },
+                headers: {
+                    'content-type': 'application/json'
+                },
+                json: true
+            }
+            const result = await rp(options);
+            resolve(result)
+        } catch (err) {
+            reject(err)
         }
     })
 }
+
+/**
+ * 
+ * @param {String} folderPath - Path to file
+ */
+const getFiles = (folderPath) => new Promise((resolve, reject) => {
+    try {
+        const files = fs.readdirSync(`./files/${folderPath}`)
+        if (files.length) {
+            resolve(files);
+        } else {
+            setTimeout(() => {
+                resolve(getFiles(folderPath));
+            }, 1000)
+        }
+    } catch (err) {
+        reject(err)
+    }
+})
+
+/**
+ * Check finish downloading: downloaded file (filePath) has '.crdownload' in name.
+ * When file is downloaded, chrome renames it and removes this postfix.
+ * It leads to filePath doesn't exists
+ * @param {String} filePath - path to file
+ */
+const waitForDownloadFile = (filePath) => new Promise((resolve, reject) => {
+    if (fs.existsSync(filePath)) {
+        setTimeout(() => {
+            return resolve(waitForDownloadFile(filePath))
+        }, 2000)
+    } else {
+        resolve()
+    }
+})
+
 /**
  * Validate body params. Return error(400) if params are invalid
  */
@@ -162,14 +163,14 @@ class Scrapper {
         this.browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--enable-automation'] }); // '--no-sandbox'
         // this.browser = await puppeteer.launch({ headless: false, args: [], defaultViewport: { width: 1024, height: 1000 } }); // '--no-sandbox'
         const page = await this.browser.newPage();
-        
+
         // configure pupperteer instance download behavior
         const hash = crypto.randomBytes(16).toString('hex');
         await page._client.send('Page.setDownloadBehavior', {
             behavior: 'allow',
             downloadPath: `./files/${hash}`
         });
-        
+
         // open start url
         await page.goto(config.base_url, { timeout: 100000 });
 
@@ -179,9 +180,11 @@ class Scrapper {
 
         // ****** FILL FORM *******
         // type ID
+        console.log('type id');
         await page.type(selectors.ID_FIELD, inputData.id)
 
         // check passport radio button
+        console.log('select answers');
         if (inputData.passportAnswer.toLowerCase() === 'yes') {
             await page.click(selectors.PASSPORT_SWITCH_YES);
         } else {
@@ -218,7 +221,7 @@ class Scrapper {
         console.log('choose year')
         // await page.waitFor(400)
         await page.click(selectors.YEAR_DROPDOWN)
-        
+
         // calculate option index for year dropdown
         const yearOptionIndex = 2019 - inputData.created_date.year;
         const yearItemSelector = selectors.YEAR_ITEM.replace('ITEM_ID', yearOptionIndex)
@@ -229,14 +232,14 @@ class Scrapper {
         // solve captcha
         console.log('start solving captcha...')
         const captchaDigit = await this.solveCaptcha(page);
-        
+
         console.log('captcha solved. enter it');
         // type solved captcha to input
         await page.type(selectors.CAPTCHA_CODE, captchaDigit);
-        
+
         // ****** FORM IS FILLED ******
-        
-        
+
+
         // go to next page
         console.log('open next page')
 
@@ -268,8 +271,6 @@ class Scrapper {
         // change target attribute. It is needed to download file on the same page
         await page.$eval(selectors.DOWNLOAD_XLS_FILE, e => e.setAttribute('target', '_self'));
         await page.click(selectors.DOWNLOAD_XLS_FILE);
-        // await page.waitFor(1000);
-        console.log('return file path');
         return {
             error: false,
             path: hash
@@ -291,17 +292,17 @@ class Scrapper {
             const img = document.getElementById(selectors.CAPTCHA_IMAGE);
             canvas.width = img.width;
             canvas.height = img.height;
-    
+
             // Copy the image contents to the canvas
             const ctx = canvas.getContext("2d");
             ctx.drawImage(img, 0, 0);
-    
+
             // Get the data-URL formatted image
             const imageBase64 = canvas.toDataURL("image/png");
-    
+
             return imageBase64
         }, selectors)
-    
+
         // prepare 2captcha solve options 
         const options = {
             method: 'POST',
@@ -316,7 +317,7 @@ class Scrapper {
         };
         // request returns request_id, what is needed to get captcha's solution 
         const captchaCode = await rp(options);
-        
+
         console.log('captcha id', captchaCode.request);
 
         // prepare request options to get solution
@@ -343,7 +344,7 @@ class Scrapper {
      * @param {*} options - request options
      * @param {*} attempt - current attempt
      */
-    async getCaptchaResult (options, attempt) {
+    async getCaptchaResult(options, attempt) {
         console.log(`Trying get captcha result. Attempt ${attempt++}`);
         return new Promise((resolve, reject) => {
             setTimeout(async () => {
