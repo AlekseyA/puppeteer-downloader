@@ -1,3 +1,4 @@
+const path = require('path');
 const moment = require('moment');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -55,6 +56,7 @@ const controller = async (req, res) => {
 };
 
 const sendFile = (files, folderPath, id) => {
+    console.log('folder path', folderPath);
     return new Promise(async (resolve, reject) => {
         const file = files[0];
         try {
@@ -131,7 +133,7 @@ const validateParams = (params) => {
         invalidParams.push('Date of create ID')
     } else {
         try {
-            const formatedDate = moment(params.created_date, 'YYYY-MM-DD').format('M/D/YYYY')
+            const formatedDate = moment(params.created_date, 'YYYY-DD-MM').format('M/D/YYYY')
             const [day, month, year] = formatedDate.split('/');
             params.created_date = {
                 day,
@@ -160,15 +162,16 @@ class Scrapper {
     }
 
     async getFile(inputData) {
-        this.browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--enable-automation'] }); // '--no-sandbox'
-        // this.browser = await puppeteer.launch({ headless: false, args: [], defaultViewport: { width: 1024, height: 1000 } }); // '--no-sandbox'
+        this.browser = await puppeteer.launch({ headless: true, args: [] }); // '--no-sandbox'
+        // this.browser = await puppeteer.launch({ headless: false, args: [], devtools: true, defaultViewport: { width: 2024, height: 1000 } }); // '--no-sandbox'
         const page = await this.browser.newPage();
 
         // configure pupperteer instance download behavior
         const hash = crypto.randomBytes(16).toString('hex');
+        const downloadPath = path.resolve(`${process.cwd()}/files/${hash}`)
         await page._client.send('Page.setDownloadBehavior', {
             behavior: 'allow',
-            downloadPath: `./files/${hash}`
+            downloadPath
         });
 
         // open start url
@@ -176,6 +179,7 @@ class Scrapper {
 
         // open form
         await page.click(selectors.OPEN_FORM_BUTTON);
+        await page.bringToFront();
         await page.waitForSelector(selectors.ID_FIELD, { timeout: 20000 });
 
         // ****** FILL FORM *******
@@ -200,34 +204,23 @@ class Scrapper {
 
         // check terms agree
         await page.click(selectors.TERMS_AGREE);
-
+        
         // choose day
         console.log('choose day')
-        // await page.waitFor(200)
-        await page.click(selectors.DAY_DROPDOWN)
         const dayItemSelector = selectors.DAT_ITEM.replace('ITEM_ID', inputData.created_date.day)
-        await page.waitForSelector(dayItemSelector, { timeout: 5000 });
-        await page.click(dayItemSelector)
+        await this.chooseDay(page, dayItemSelector);
 
         // choose month
         console.log('choose month')
-        // await page.waitFor(400)
-        await page.click(selectors.MONTH_DROPDOWN)
         const monthItemSelector = selectors.MONTH_ITEM.replace('ITEM_ID', inputData.created_date.month)
-        await page.waitForSelector(monthItemSelector, { visible: true, timeout: 5000 });
-        await page.click(monthItemSelector)
+        await this.chooseMonth(page, monthItemSelector)
 
         // choose year
         console.log('choose year')
-        // await page.waitFor(400)
-        await page.click(selectors.YEAR_DROPDOWN)
-
         // calculate option index for year dropdown
         const yearOptionIndex = 2019 - inputData.created_date.year;
         const yearItemSelector = selectors.YEAR_ITEM.replace('ITEM_ID', yearOptionIndex)
-        await page.waitForSelector(yearItemSelector, { visible: true, timeout: 5000 });
-        await page.waitFor(400)
-        await page.click(yearItemSelector)
+        await this.chooseYear(page, yearItemSelector);
 
         // solve captcha
         console.log('start solving captcha...')
@@ -277,7 +270,68 @@ class Scrapper {
         }
     }
 
+    /**
+     * Try choose day 5 times. Otherwise throws exception
+     * @param {*} page - browser page
+     * @param {string} selector - element what should be clicked
+     * @param {*} attempt - current attempt. Default 1
+     */
+    async chooseDay(page, selector, attempt = 1) {
+        try {
+            await page.click(selectors.DAY_DROPDOWN)
+            await page.waitForSelector(selector, { timeout: 5000 });
+            await page.click(selector)
+        } catch (err) {
+            if (attempt < 6) {
+                console.log('try choosing day one more time...');
+                return this.chooseDay(page, selector, attempt++);
+            }
+            throw err
+        }
+    }
+
+    /**
+     * Try choose month 5 times. Otherwise throws exception
+     * @param {*} page - browser page
+     * @param {string} selector - element what should be clicked
+     * @param {*} attempt - current attempt. Default 1
+     */
+    async chooseMonth(page, selector, attempt = 1) {
+        try {
+            await page.click(selectors.MONTH_DROPDOWN)
+            await page.waitForSelector(selector, { visible: true, timeout: 5000 });
+            await page.click(selector)
+        } catch (err) {
+            if (attempt < 6) {
+                console.log('try choosing month one more time...');
+                return this.chooseMonth(page, selector, attempt++)
+            }
+            throw err
+        }
+    }
+
+    /**
+     * Try choose year 5 times. Otherwise throws exception
+     * @param {*} page - browser page
+     * @param {string} selector - element what should be clicked
+     * @param {*} attempt - current attempt. Default 1
+     */
+    async chooseYear(page, selector, attempt = 1) {
+        try {
+            await page.click(selectors.YEAR_DROPDOWN)
+            await page.waitForSelector(selector, { visible: true, timeout: 5000 });
+            await page.click(selector)
+        } catch (err) {
+            if (attempt < 6) {
+                console.log('try choosing year one more time...');
+                return this.chooseYear(page, selector, attempt++)
+            }
+            throw err
+        }
+    }
+
     async killBrowserInstance() {
+        console.log('close browser');
         await this.browser.close();
     }
 
