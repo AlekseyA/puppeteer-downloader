@@ -48,7 +48,7 @@ const controller = async (req, res) => {
     } catch (err) {
         // handle all errors
         console.log(`Error: ${err.message}`);
-        return res.status(500).json({ error: true, message: `Error: ${err.message}` })
+        return res.status(400).json({ error: true, message: `Error: ${err.message}` })
     } finally {
         // close browser instance
         await scrapper.killBrowserInstance();
@@ -133,7 +133,8 @@ const validateParams = (params) => {
         invalidParams.push('Date of create ID')
     } else {
         try {
-            const formatedDate = moment(params.created_date, 'YYYY-DD-MM').format('M/D/YYYY')
+            const formatedDate = moment(params.created_date, 'YYYY-MM-DD').format('D/M/YYYY')
+            // const formatedDate = moment(params.created_date, 'YYYY-DD-MM').format('M/D/YYYY')
             const [day, month, year] = formatedDate.split('/');
             params.created_date = {
                 day,
@@ -282,9 +283,9 @@ class Scrapper {
             await page.waitForSelector(selector, { timeout: 5000 });
             await page.click(selector)
         } catch (err) {
-            if (attempt < 6) {
+            if (attempt <= config.attempt_numbers) {
                 console.log('try choosing day one more time...');
-                return this.chooseDay(page, selector, attempt++);
+                return this.chooseDay(page, selector, ++attempt);
             }
             throw err
         }
@@ -302,9 +303,9 @@ class Scrapper {
             await page.waitForSelector(selector, { visible: true, timeout: 5000 });
             await page.click(selector)
         } catch (err) {
-            if (attempt < 6) {
+            if (attempt <= config.attempt_numbers) {
                 console.log('try choosing month one more time...');
-                return this.chooseMonth(page, selector, attempt++)
+                return this.chooseMonth(page, selector, ++attempt)
             }
             throw err
         }
@@ -322,9 +323,9 @@ class Scrapper {
             await page.waitForSelector(selector, { visible: true, timeout: 5000 });
             await page.click(selector)
         } catch (err) {
-            if (attempt < 6) {
+            if (attempt <= config.attempt_numbers) {
                 console.log('try choosing year one more time...');
-                return this.chooseYear(page, selector, attempt++)
+                return this.chooseYear(page, selector, ++attempt)
             }
             throw err
         }
@@ -401,6 +402,9 @@ class Scrapper {
     async getCaptchaResult(options, attempt) {
         console.log(`Trying get captcha result. Attempt ${attempt++}`);
         return new Promise((resolve, reject) => {
+            if (attempt > config.attempt_numbers) {
+                return reject('Can\'t get captcha result');
+            }
             setTimeout(async () => {
                 const result = await rp(options);
                 if (result.status === 1) {
