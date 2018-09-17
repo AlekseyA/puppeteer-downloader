@@ -180,13 +180,13 @@ class Scrapper {
 
         // open form
         await page.click(selectors.OPEN_FORM_BUTTON);
-        await page.bringToFront();
+        // await page.bringToFront();
         await page.waitForSelector(selectors.ID_FIELD, { timeout: 20000 });
 
         // ****** FILL FORM *******
         // type ID
         console.log('type id');
-        await page.type(selectors.ID_FIELD, inputData.id)
+        await this.typeId(selectors.ID_FIELD, inputData.id, page)
 
         // check passport radio button
         console.log('select answers');
@@ -197,7 +197,7 @@ class Scrapper {
         }
 
         // check country radio button
-        if (inputData.passportAnswer.toLowerCase() === 'yes') {
+        if (inputData.countryAnswer.toLowerCase() === 'yes') {
             await page.click(selectors.COUNTRY_OUT_SWITCH_YES);
         } else {
             await page.click(selectors.COUNTRY_OUT_SWITCH_NO);
@@ -334,6 +334,15 @@ class Scrapper {
     async killBrowserInstance() {
         console.log('close browser');
         await this.browser.close();
+    }
+
+    async typeId(selector, dataId, page) {
+        await page.type(selector, dataId)
+        const idValue = await page.$eval(selector, el => el.value);
+        if (idValue.length != dataId.length) {
+            console.log('-- invalid id entered');
+            return this.typeId(selector, dataId, page)
+        }
     }
 
     /**
