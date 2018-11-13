@@ -12,7 +12,7 @@ npm install
 Add `local.config.js` to `configs` folder. It has to have the following structure:
 ```js
 module.exports = {
-    base_url: 'https://harb.cma.gov.il/',
+    base_url: 'https://site.com',
     API_KEY: 'your_api_key',
     captcha_solver_result_url: 'http://2captcha.com/res.php',
     captcha_solver_request_url: 'http://2captcha.com/in.php',
